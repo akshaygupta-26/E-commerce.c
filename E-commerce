@@ -1,0 +1,230 @@
+#include <stdio.h>
+#include <stdlib.h>
+
+#define NUM_PRODUCTS 6
+
+/* Array of structures: product catalogue */
+typedef struct {
+    int id;
+    char name[30];
+    float price;
+    int stock;
+} Product;
+
+/* Cart item (stored in a dynamically allocated array) */
+typedef struct {
+    int productId;
+    int qty;
+} CartItem;
+
+Product catalogue[NUM_PRODUCTS] = {
+    {1, "Laptop",       55000.0, 5},
+    {2, "Smartphone",   20000.0, 10},
+    {3, "Headphones",    1500.0, 20},
+    {4, "Keyboard",       800.0, 15},
+    {5, "Mouse",          500.0, 25},
+    {6, "USB Cable",      150.0, 50}
+};
+
+/* ---------- Function prototypes ---------- */
+void displayCatalogue(Product *cat, int n);
+void addToCart(CartItem **cart, int *count, Product *cat, int n);
+void removeFromCart(CartItem **cart, int *count);
+void viewCart(CartItem *cart, int count, Product *cat);
+float calculateSubtotal(CartItem *cart, int count, Product *cat);
+float getDiscountPercent(float subtotal);
+void checkout(CartItem **cart, int *count, Product *cat);
+int readInt(void);
+
+/* ---------- Main ---------- */
+int main() {
+    CartItem *cart = NULL;   /* pointer tracks cart dynamically */
+    int count = 0;
+    int choice;
+
+    printf("===== WELCOME TO C-MART =====\n");
+
+    do {
+        printf("\n---------- MENU ----------\n");
+        printf("1. View Catalogue\n");
+        printf("2. Add Item to Cart\n");
+        printf("3. Remove Item from Cart\n");
+        printf("4. View Cart\n");
+        printf("5. Checkout\n");
+        printf("6. Exit\n");
+        printf("Enter choice: ");
+        choice = readInt();
+
+        switch (choice) {
+            case 1: displayCatalogue(catalogue, NUM_PRODUCTS); break;
+            case 2: addToCart(&cart, &count, catalogue, NUM_PRODUCTS); break;
+            case 3: removeFromCart(&cart, &count); break;
+            case 4: viewCart(cart, count, catalogue); break;
+            case 5: checkout(&cart, &count, catalogue); break;
+            case 6: printf("Thank you for visiting!\n"); break;
+            default: printf("Invalid choice. Try again.\n");
+        }
+    } while (choice != 6);
+
+    free(cart);   /* release dynamic memory */
+    return 0;
+}
+
+/* ---------- Helper: safe integer input ---------- */
+int readInt(void) {
+    int x;
+    if (scanf("%d", &x) != 1) {
+        while (getchar() != '\n');   /* clear bad input */
+        return -1;
+    }
+    return x;
+}
+
+/* ---------- Show products ---------- */
+void displayCatalogue(Product *cat, int n) {
+    printf("\n%-4s %-15s %-10s %-6s\n", "ID", "Product", "Price", "Stock");
+    printf("------------------------------------\n");
+    for (int i = 0; i < n; i++) {
+        printf("%-4d %-15s %-10.2f %-6d\n",
+               (cat + i)->id, (cat + i)->name, (cat + i)->price, (cat + i)->stock);
+    }
+}
+
+/* ---------- Add item (grows cart with realloc) ---------- */
+void addToCart(CartItem **cart, int *count, Product *cat, int n) {
+    displayCatalogue(cat, n);
+
+    printf("Enter product ID: ");
+    int id = readInt();
+    if (id < 1 || id > n) {
+        printf("Invalid product ID.\n");
+        return;
+    }
+
+    printf("Enter quantity: ");
+    int qty = readInt();
+    if (qty <= 0) {
+        printf("Invalid quantity.\n");
+        return;
+    }
+
+    /* If already in cart, update quantity */
+    for (int i = 0; i < *count; i++) {
+        if ((*cart)[i].productId == id) {
+            if ((*cart)[i].qty + qty > cat[id - 1].stock) {
+                printf("Not enough stock! Available: %d\n", cat[id - 1].stock);
+                return;
+            }
+            (*cart)[i].qty += qty;
+            printf("Cart updated.\n");
+            return;
+        }
+    }
+
+    if (qty > cat[id - 1].stock) {
+        printf("Not enough stock! Available: %d\n", cat[id - 1].stock);
+        return;
+    }
+
+    /* New item: grow the cart array */
+    CartItem *temp = realloc(*cart, (*count + 1) * sizeof(CartItem));
+    if (temp == NULL) {
+        printf("Memory allocation failed!\n");
+        return;
+    }
+    *cart = temp;
+    (*cart)[*count].productId = id;
+    (*cart)[*count].qty = qty;
+    (*count)++;
+    printf("%s added to cart.\n", cat[id - 1].name);
+}
+
+/* ---------- Remove item ---------- */
+void removeFromCart(CartItem **cart, int *count) {
+    if (*count == 0) {
+        printf("Cart is empty.\n");
+        return;
+    }
+
+    printf("Enter product ID to remove: ");
+    int id = readInt();
+
+    for (int i = 0; i < *count; i++) {
+        if ((*cart)[i].productId == id) {
+            /* shift remaining items left */
+            for (int j = i; j < *count - 1; j++)
+                (*cart)[j] = (*cart)[j + 1];
+            (*count)--;
+
+            if (*count == 0) {
+                free(*cart);
+                *cart = NULL;
+            } else {
+                *cart = realloc(*cart, (*count) * sizeof(CartItem));
+            }
+            printf("Item removed.\n");
+            return;
+        }
+    }
+    printf("Item not found in cart.\n");
+}
+
+/* ---------- Subtotal ---------- */
+float calculateSubtotal(CartItem *cart, int count, Product *cat) {
+    float total = 0;
+    for (int i = 0; i < count; i++)
+        total += cat[(cart + i)->productId - 1].price * (cart + i)->qty;
+    return total;
+}
+
+/* ---------- Discount slabs (decision control) ---------- */
+float getDiscountPercent(float subtotal) {
+    if (subtotal >= 50000) return 15.0;
+    else if (subtotal >= 10000) return 10.0;
+    else if (subtotal >= 2000) return 5.0;
+    else return 0.0;
+}
+
+/* ---------- Display cart with bill ---------- */
+void viewCart(CartItem *cart, int count, Product *cat) {
+    if (count == 0) {
+        printf("\nYour cart is empty.\n");
+        return;
+    }
+
+    printf("\n%-15s %-6s %-10s %-10s\n", "Product", "Qty", "Price", "Amount");
+    printf("-------------------------------------------\n");
+    for (int i = 0; i < count; i++) {
+        Product *p = &cat[cart[i].productId - 1];
+        printf("%-15s %-6d %-10.2f %-10.2f\n",
+               p->name, cart[i].qty, p->price, p->price * cart[i].qty);
+    }
+
+    float subtotal = calculateSubtotal(cart, count, cat);
+    float discPercent = getDiscountPercent(subtotal);
+    float discount = subtotal * discPercent / 100;
+
+    printf("-------------------------------------------\n");
+    printf("Subtotal       : %.2f\n", subtotal);
+    printf("Discount (%.0f%%) : -%.2f\n", discPercent, discount);
+    printf("Total Payable  : %.2f\n", subtotal - discount);
+}
+
+/* ---------- Checkout: reduce stock, clear cart ---------- */
+void checkout(CartItem **cart, int *count, Product *cat) {
+    if (*count == 0) {
+        printf("Cart is empty. Add items first.\n");
+        return;
+    }
+
+    printf("\n======== FINAL BILL ========");
+    viewCart(*cart, *count, cat);
+
+    for (int i = 0; i < *count; i++)
+        cat[(*cart)[i].productId - 1].stock -= (*cart)[i].qty;
+
+    free(*cart);
+    *cart = NULL;
+    *count = 0;
+    printf("\nOrder placed successfully! Thank you for shopping.\n");
+}
